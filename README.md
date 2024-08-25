@@ -9,7 +9,7 @@ Playlist synchronization for spotify and apple music. Currently only transers sp
 
 ## general usage
 
-* in apple music, make an empty playlist, and name it `\[amsync] name of spotify playlist in your spotify library to sync`.
+* in apple music, make an empty playlist, and name it `[amsync] name of spotify playlist in your spotify library to sync`.
 * `cargo run` amsync after following setup instructions
 * log in with spotify
 

@@ -8,7 +8,13 @@ pub struct AppleMusicCatalogSong(pub u64);
 pub struct AppleMusicLibrarySong(pub String);
 impl AppleMusicCatalogSong {
     pub fn from_json(obj: &Value) -> Self {
-        Self(u64::from_str_radix(&obj.as_object().unwrap()["id"].as_str().unwrap(), 10).unwrap())
+        Self(
+            obj.as_object().unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap(),
+        )
     }
 }
 #[derive(Debug, Clone)]

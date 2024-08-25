@@ -64,7 +64,7 @@ impl SpotifyDriver {
                     a.get("code").unwrap().to_string(),
                     a.get("state").unwrap().to_string(),
                 ));
-                Response::new("you may close this tab".into())
+                Response::new("<body onload=\"window.close()\">".into())
             });
         webbrowser::open(url.as_str());
 
@@ -103,25 +103,26 @@ impl SpotifyDriver {
             .collect::<Vec<_>>()
     }
     pub async fn isrcs_from_playlist(&mut self, playlist_id: &str) -> Vec<IsrcWithMeta> {
-        dbg!(playlist_id);
         let mut items = Vec::new();
         let mut current = 0;
+        const PAGE_SIZE: u32 = 50;
         loop {
-            let Ok(resp) = self
+            let req = self
                 .0
                 .playlist_items(playlist_id)
-                .limit(30)
+                .limit(PAGE_SIZE)
                 .offset(current)
                 .get()
-                .await
-            else {
+                .await;
+            let Ok(resp) = req else {
+                dbg!(req);
                 break;
             };
             items.extend_from_slice(&resp.items);
-            if resp.items.len() < 30 {
+            if resp.items.len() < PAGE_SIZE as usize {
                 break;
             }
-            current += 30;
+            current += PAGE_SIZE;
         }
 
         items
@@ -439,34 +440,22 @@ async fn main() {
     let amd = AppleMusicDriver::new();
     let mut spd = SpotifyDriver::new().await;
     let mut map = HashMap::new();
-    loop {
-        map.clear();
-        spd.get_playlists().await.into_iter().for_each(|v| {
-            map.insert(v.0.trim().to_string(), v);
-        });
+    spd.get_playlists().await.into_iter().for_each(|v| {
+        map.insert(v.0.trim().to_string(), v);
+    });
+    let amplaylistids = amd.get_playlists_to_sync().await;
 
-        let amplaylistids = amd.get_playlists_to_sync().await;
-        dbg!(&map, &amplaylistids);
-        for appleplaylist in amplaylistids {
-            let start = std::time::Instant::now();
-            if let Some(playlist) = map.get(appleplaylist.0.replace("[amsync]", "").trim()) {
-                let isrcs = spd.isrcs_from_playlist(&playlist.1).await;
-                println!(
-                    "adding songs from spotify playlist {} ({}) to apple music playlist {}",
-                    playlist.1, playlist.0, &appleplaylist.0,
-                );
+    for appleplaylist in amplaylistids {
+        let start = std::time::Instant::now();
+        if let Some(playlist) = map.get(appleplaylist.0.replace("[amsync]", "").trim()) {
+            let isrcs = spd.isrcs_from_playlist(&playlist.1).await;
+            println!(
+                "adding songs from spotify playlist {} ({}) to apple music playlist {}",
+                playlist.1, playlist.0, &appleplaylist.0,
+            );
 
-                amd.add_isrcs_to_playlist(appleplaylist.1.clone(), &isrcs)
-                    .await;
-                println!(
-                    "took {} seconds",
-                    std::time::Instant::now()
-                        .checked_duration_since(start)
-                        .unwrap()
-                        .as_secs_f64()
-                );
-            }
+            amd.add_isrcs_to_playlist(appleplaylist.1.clone(), &isrcs)
+                .await;
         }
-        tokio::time::sleep(Duration::from_millis(30000)).await;
     }
 }

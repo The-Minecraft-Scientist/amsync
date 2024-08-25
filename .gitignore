@@ -1,0 +1,4 @@
+/target
+/db
+*.DS_Store
+credentials.env

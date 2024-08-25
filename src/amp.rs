@@ -44,6 +44,7 @@ impl Metadata {
         let album_name_distance = stringmetrics::levenshtein(&self.album_name, &other.album_name);
         album_name_distance
             + match (&self.release_date, &other.release_date) {
+                #[allow(clippy::cast_possible_truncation)]
                 (Some(sel), Some(othe)) => {
                     sel.signed_duration_since(*othe).num_days().unsigned_abs() as u32
                 }

@@ -1,4 +1,7 @@
-use serde_json::{value::*, Value};
+#![warn(clippy::pedantic)]
+#![allow(clippy::missing_panics_doc, clippy::must_use_candidate)]
+
+use serde_json::{value::Map, Value};
 use spotify_rs::{
     auth::{NoVerifier, Token},
     client::Client as SpotifyClient,
@@ -91,23 +94,24 @@ impl SpotifyDriver {
         Self(spotify)
     }
     pub async fn get_playlists(&mut self) -> Vec<(String, String)> {
+        const PAGE_SIZE: u32 = 50;
         let mut current = 0;
         let mut playlists = Vec::new();
         loop {
             let resp = self
                 .0
                 .current_user_playlists()
-                .limit(30)
+                .limit(PAGE_SIZE)
                 .offset(current)
                 .get()
                 .await
                 .unwrap();
             playlists.extend_from_slice(&resp.items);
 
-            if resp.items.len() < 30 {
+            if resp.items.len() < PAGE_SIZE as usize {
                 break;
             }
-            current += 30;
+            current += PAGE_SIZE;
         }
         playlists
             .into_iter()
@@ -115,9 +119,10 @@ impl SpotifyDriver {
             .collect::<Vec<_>>()
     }
     pub async fn isrcs_from_playlist(&mut self, playlist_id: &str) -> Vec<IsrcWithMeta> {
+        const PAGE_SIZE: u32 = 50;
         let mut items = Vec::new();
         let mut current = 0;
-        const PAGE_SIZE: u32 = 50;
+
         loop {
             let req = self
                 .0
@@ -152,7 +157,7 @@ impl SpotifyDriver {
                     .unwrap(),
                     DatePrecision::Month => {
                         let str = t.album.release_date;
-                        let split = str.split("-").collect::<Vec<&str>>();
+                        let split = str.split('-').collect::<Vec<&str>>();
                         chrono::NaiveDate::from_ymd_opt(
                             split[0].parse::<i32>().unwrap(),
                             split[1].parse::<u32>().unwrap(),
@@ -162,7 +167,7 @@ impl SpotifyDriver {
                     }
                     DatePrecision::Day => {
                         let str = t.album.release_date;
-                        let split = str.split("-").collect::<Vec<&str>>();
+                        let split = str.split('-').collect::<Vec<&str>>();
                         chrono::NaiveDate::from_ymd_opt(
                             split[0].parse::<i32>().unwrap(),
                             split[1].parse::<u32>().unwrap(),
@@ -215,7 +220,7 @@ impl AppleMusicDriver {
         let mut map =
             HashMap::<String, Vec<AppleMusicCatalogSongWithMeta>>::with_capacity(isrcss.len());
         for isrc in isrcss.chunks(5) {
-            let mut filt_str = "".to_owned();
+            let mut filt_str = String::new();
             for id in isrc {
                 filt_str = format!("{},{}", filt_str, id.isrc);
             }
@@ -224,8 +229,7 @@ impl AppleMusicDriver {
                 .request(
                     Method::GET,
                     format!(
-                        "https://amp-api.music.apple.com/v1/catalog/us/songs/?filter[isrc]={}",
-                        filt_str
+                        "https://amp-api.music.apple.com/v1/catalog/us/songs/?filter[isrc]={filt_str}"
                     ),
                 )
                 .query(&[
@@ -272,7 +276,7 @@ impl AppleMusicDriver {
                 };
                 let str = ent.as_str().unwrap().to_owned();
 
-                let split = str.split("-").collect::<Vec<&str>>();
+                let split = str.split('-').collect::<Vec<&str>>();
                 let date = match split.len() {
                     1 => chrono::NaiveDate::from_yo_opt(split[0].parse::<i32>().unwrap(), 365 / 2)
                         .unwrap(),
@@ -344,7 +348,7 @@ impl AppleMusicDriver {
         }
     }
     pub async fn isrcs_from_playlist(&self, playlist: AppleMusicPlaylistId) -> Vec<String> {
-        let mut songv = vec![];
+        let mut songs_out = vec![];
         let req = self
             .client
             .get(format!(
@@ -369,8 +373,8 @@ impl AppleMusicDriver {
         let songs = json.as_object().unwrap()["resources"].as_object().unwrap()["songs"]
             .as_object()
             .unwrap();
-        for song in songs.iter() {
-            songv.push(
+        for song in songs {
+            songs_out.push(
                 song.1.as_object().unwrap()["attributes"]
                     .as_object()
                     .unwrap()["isrc"]
@@ -379,7 +383,7 @@ impl AppleMusicDriver {
                     .to_owned(),
             );
         }
-        songv
+        songs_out
     }
     pub async fn get_playlists_to_sync(&self) -> Vec<(String, AppleMusicPlaylistId)> {
         let to_change = Arc::new(Mutex::new(vec![]));
@@ -405,14 +409,14 @@ impl AppleMusicDriver {
             let name = item["attributes"].as_object().unwrap()["name"]
                 .as_str()
                 .unwrap();
-            if name.contains("[amsync]") || name.contains("halloween") {
+            if name.contains("[amsync]") {
                 to_change.lock().await.push((
                     item["attributes"].as_object().unwrap()["name"]
                         .as_str()
                         .unwrap()
                         .to_owned(),
                     AppleMusicPlaylistId(item["id"].as_str().unwrap().to_string()),
-                ))
+                ));
             }
         }
         to_change.lock_owned().await.clone()

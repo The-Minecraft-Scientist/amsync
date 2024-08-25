@@ -12,4 +12,4 @@
 * in apple music, make an empty playlist, and name it `\[amsync] name of spotify playlist to sync`.
 * `cargo run` amsync after following setup instructions
 
-Note that amsync currently does not track the songs it adds to playlists, so running it twice will result in the playlist repeating twice. It may also to fail to match isrcs where they exist on spotify but not on apple music
+Note that amsync currently does not track the songs it adds to playlists, so running it twice will result in the playlist repeating twice. It may also fail to match isrcs where they exist on spotify but not on apple music

@@ -1,4 +1,4 @@
 /target
 /db
 *.DS_Store
-credentials.env
+credentials.toml

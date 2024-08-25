@@ -1,11 +1,8 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub struct AppleMusicCatalogSong(pub u64);
-pub struct AppleMusicLibrarySong(pub String);
 impl AppleMusicCatalogSong {
     pub fn from_json(obj: &Value) -> Self {
         Self(

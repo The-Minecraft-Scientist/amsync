@@ -1,28 +1,22 @@
-#![allow(unused)]
-#![feature(decl_macro)]
-
-use serde::Serialize;
 use serde_json::{value::*, Value};
 use spotify_rs::{
     auth::{NoVerifier, Token},
     client::Client as SpotifyClient,
-    model::{playlist::SimplifiedPlaylist, CursorPage, DatePrecision, PlayableItem},
+    model::{DatePrecision, PlayableItem},
     AuthCodeClient, AuthCodeFlow, RedirectUrl,
 };
-use std::{collections::HashMap, fmt::format, ops::Deref, str::FromStr, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
+use std::{
+    collections::HashMap,
+    fs::read_to_string,
+    str::FromStr,
+    sync::{Arc, OnceLock},
+};
 use tokio::sync::oneshot::channel;
+use toml::Table;
 mod amp;
-use amp::{
-    AppleMusicCatalogSong, AppleMusicLibrarySong, AppleMusicPlaylistId, IsrcWithMeta, Metadata,
-    SpotifySong, UnifiedPlaylist, UnifiedSong,
-};
-use dotenv::var;
-use futures::{lock::Mutex, stream::Next, StreamExt, TryFutureExt, TryStreamExt};
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Client, Method, RequestBuilder,
-};
+use amp::{AppleMusicCatalogSong, AppleMusicPlaylistId, IsrcWithMeta, Metadata};
+use futures::lock::Mutex;
+use reqwest::{header::HeaderMap, Client, Method};
 
 use warp::{reply::Response, Filter};
 
@@ -40,33 +34,51 @@ macro_rules! header {
 pub struct AppleMusicDriver {
     client: Client,
 }
+fn get_creds<'a>() -> &'a Table {
+    CREDS.get_or_init(|| {
+        read_to_string("credentials.toml")
+            .expect("Could not open credentials file")
+            .parse::<Table>()
+            .expect("failed to parse credentials file")
+    })
+}
+
+static CREDS: OnceLock<Table> = OnceLock::new();
+
 pub struct SpotifyDriver(SpotifyClient<Token, AuthCodeFlow, NoVerifier>);
 impl SpotifyDriver {
     pub async fn new() -> Self {
-        let (mut txcode, mut rxcode) = std::sync::mpsc::sync_channel(0);
+        let (txcode, rxcode) = std::sync::mpsc::sync_channel(0);
         let (txstop, rxstop) = channel::<()>();
-
-        let client_id = var("CLIENT_ID").unwrap();
-        let client_secret = var("CLIENT_SECRET").unwrap();
-        let redirect_url = var("REDIRECT_URI").unwrap();
+        let client_id = get_creds()["spotify_client_id"].as_str().unwrap();
+        let client_secret = get_creds()["spotify_client_secret"].as_str().unwrap();
 
         let auth = AuthCodeFlow::new(client_id, client_secret, vec!["playlist-read-private"]);
 
-        let (client, url) =
-            AuthCodeClient::new(auth, RedirectUrl::new(redirect_url).unwrap(), true);
+        let (client, url) = AuthCodeClient::new(
+            auth,
+            RedirectUrl::new("https://localhost:8888/callback/".to_string()).unwrap(),
+            true,
+        );
 
         let w = warp::get()
             .and(warp::path("callback"))
             .and(warp::query::<HashMap<String, String>>())
             .map(move |a: HashMap<String, String>| {
-                dbg!(&a);
-                txcode.send((
-                    a.get("code").unwrap().to_string(),
-                    a.get("state").unwrap().to_string(),
-                ));
+                txcode
+                    .send((
+                        a.get("code").unwrap().to_string(),
+                        a.get("state").unwrap().to_string(),
+                    ))
+                    .unwrap();
                 Response::new("<body onload=\"window.close()\">".into())
             });
-        webbrowser::open(url.as_str());
+        if webbrowser::open(url.as_str()).is_err() {
+            println!(
+                "failed to open spotify login link automatically, please open the link at {}",
+                url.as_str()
+            );
+        }
 
         let (_addr, server) =
             warp::serve(w).bind_with_graceful_shutdown(([127, 0, 0, 1], 8888), async move {
@@ -75,7 +87,7 @@ impl SpotifyDriver {
         tokio::task::spawn(server);
         let c = rxcode.recv().unwrap();
         let spotify = client.authenticate(c.0, c.1).await.unwrap();
-        txstop.send(());
+        txstop.send(()).unwrap();
         Self(spotify)
     }
     pub async fn get_playlists(&mut self) -> Vec<(String, String)> {
@@ -115,7 +127,6 @@ impl SpotifyDriver {
                 .get()
                 .await;
             let Ok(resp) = req else {
-                dbg!(req);
                 break;
             };
             items.extend_from_slice(&resp.items);
@@ -174,9 +185,9 @@ impl SpotifyDriver {
 
 impl AppleMusicDriver {
     pub fn new() -> Self {
-        let authorization = var("BEARER").unwrap();
-        let media_user_token = var("MEDIA_USER_TOKEN").unwrap();
-        let cookies = var("AMP_COOKIES").unwrap();
+        let authorization = get_creds()["bearer"].as_str().unwrap();
+        let media_user_token = get_creds()["media_user_token"].as_str().unwrap();
+        let cookies = get_creds()["amp_cookies"].as_str().unwrap();
 
         let mut headers = HeaderMap::new();
         header!(headers, "Authorization", &authorization);
@@ -371,7 +382,7 @@ impl AppleMusicDriver {
         songv
     }
     pub async fn get_playlists_to_sync(&self) -> Vec<(String, AppleMusicPlaylistId)> {
-        let mut to_change = Arc::new(Mutex::new(vec![]));
+        let to_change = Arc::new(Mutex::new(vec![]));
         let req = self
             .client
             .request(
@@ -435,8 +446,6 @@ impl Default for AppleMusicDriver {
 
 #[tokio::main]
 async fn main() {
-    dotenv::from_filename("credentials.env");
-
     let amd = AppleMusicDriver::new();
     let mut spd = SpotifyDriver::new().await;
     let mut map = HashMap::new();
@@ -446,7 +455,6 @@ async fn main() {
     let amplaylistids = amd.get_playlists_to_sync().await;
 
     for appleplaylist in amplaylistids {
-        let start = std::time::Instant::now();
         if let Some(playlist) = map.get(appleplaylist.0.replace("[amsync]", "").trim()) {
             let isrcs = spd.isrcs_from_playlist(&playlist.1).await;
             println!(

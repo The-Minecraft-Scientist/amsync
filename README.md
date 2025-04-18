@@ -19,4 +19,10 @@ it may also fail to match isrcs where they exist on spotify but not on apple mus
 
 ## how it works
 commercially released songs typically have an ISRC or International Standard Recording Code associated with them. 
-both spotify and apple music support searching for songs with this id as well getting the ISRC of a song. with this alone, you can get something that works, but in practice there are usually many different versions or releases associated with a single ISRC. to find the best match, amsync gathers metadata about all possible candidates (songs with a matching ISRC). it then uses levenshtein distance to compute the lexical difference between their song titles and artist names, and adds that to the number of days between the release dates of the target and the candidate to form a heuristic for evaluating how likely it is that a given Apple Music song exactly matches the desired spotify song. this heuristic is evaluated for every candidate and the best (closest) candidate is selected and queued to be added to the Apple Music playlist.
+both spotify and apple music support searching for songs with this id as well getting the ISRC of a song.
+with this alone, you can get something that works, but in practice there are usually many different versions or releases associated with a single ISRC.
+to find the best match, amsync gathers metadata about all possible candidates (songs with a matching ISRC).
+it then uses levenshtein distance to compute the lexical difference between their song titles and artist names
+and adds that to the number of days between the release dates of the target and the candidate. This forms a heuristic for evaluating how likely it is that
+a given Apple Music song exactly matches the desired spotify song.
+this heuristic is evaluated for every candidate and the best scoring candidate is selected and queued to be added to the Apple Music playlist.

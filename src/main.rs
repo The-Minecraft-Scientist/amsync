@@ -400,7 +400,6 @@ impl AppleMusicDriver {
         };
         let text = resp.text().await.unwrap();
         let json = serde_json::value::Value::from_str(&text).unwrap();
-        dbg!(&json);
         for item in json["data"]
             .as_array()
             .unwrap()
@@ -458,10 +457,8 @@ async fn main() {
         map.insert(v.0.trim().to_string(), v);
     });
     let amplaylistids = amd.get_playlists_to_sync().await;
-    dbg!(&amplaylistids);
     for appleplaylist in amplaylistids {
         if let Some(playlist) = map.get(appleplaylist.0.replace("[amsync]", "").trim()) {
-            dbg!();
             let isrcs = spd.isrcs_from_playlist(&playlist.1).await;
             println!(
                 "adding songs from spotify playlist {} ({}) to apple music playlist {}",
@@ -471,6 +468,5 @@ async fn main() {
             amd.add_isrcs_to_playlist(appleplaylist.1.clone(), &isrcs)
                 .await;
         }
-        dbg!();
     }
 }
